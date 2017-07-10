@@ -74,15 +74,15 @@ object kw_online {
   }
 
   def process(data: RDD[(Long, (String, String))], w1: Double, w2: Double, w3: Double): RDD[(Long, String, String, Array[(String, Double)])] = {
-    val sc = SparkApp.sc
 
+    val sc = SparkApp.sc
     val wordVecg = queryWordVec()
     val wordVecBroad = sc.broadcast(wordVecg)
     val wordIdfBroad = sc.broadcast(queryIdf())
     println(sdf_time.format(new Date((System.currentTimeMillis()))) + "***********************wordVecg= " + wordVecg.size + "*****************************")
     Log.info("word vec cnt=" + wordVecg.size)
     val trainWordBroad = sc.broadcast(wordVecg.map(_._1).toSet)
-    val se = segmentArticle(data)
+    val se = segmentArticle(data.map(r=>(r._1,(r._2._1.toLowerCase(),r._2._2.toLowerCase()))))
 
     //    println(se.count())
     //    se
@@ -244,7 +244,7 @@ object kw_online {
     val srcData = sqlContext.sql(selectSrc)
     println(sdf_time.format(new Date((System.currentTimeMillis()))) + "***********************srcData= " + srcData.count() + "*****************************")
     val id_title_content = srcData.map(r => {
-      (r.getLong(0), (r.getString(1).toLowerCase(), r.getString(2).toLowerCase()))//lowercase
+      (r.getLong(0), (r.getString(1), r.getString(2)))
     })
     id_title_content
 
