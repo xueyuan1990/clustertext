@@ -77,7 +77,7 @@ object clusterText_uc {
     val word_vec = load_vec(sql_2).collect().toMap
     val word_vec_keySet = word_vec.keySet
     //artical
-    val sql_1 = "select a.fid,w.kw,a.fcategory from mzreader.ods_t_article_c a ,algo.xueyuan_article_key w where w.stat_date='" + wstat_date + "' and a.fid=w.id and fresource_type=2  and fid is not null and fcategory is not null and fcontent is not null and fkeywords is not null and fkeywords != ''"
+    val sql_1 = "select a.fid,w.kw,a.fcategory from mzreader.ods_t_article_c a ,algo.xueyuan_article_key w where " /*w.stat_date='" + wstat_date + "' and a.fid=w.id and */ + "fresource_type=2  and fid is not null and fcategory is not null and fcontent is not null and fkeywords is not null and fkeywords != ''"
     val id_word_cate = load_data(sql_1)
     id_word_cate.cache()
     println(sdf_time.format(new Date((System.currentTimeMillis()))) + "***********************id_word_cate=" + id_word_cate.count() + "*****************************")

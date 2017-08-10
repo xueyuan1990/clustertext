@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 /**
   * Created by xueyuan on 2017/7/4.
   */
-object kw_online {
+object kw_test {
   val sdf_time: SimpleDateFormat = new SimpleDateFormat("HH:mm:ss")
   val htmlPatter = "<[^>]+?>"
   val WORD_SEP = ","
@@ -48,7 +48,7 @@ object kw_online {
     val start = System.currentTimeMillis()
     val se = process(data, w1, w2, w3)
     val id_title_content_kw = se.mapPartitions(iter => for (r <- iter) yield {
-      (r._1, r._2, r._3, r._4.map(r => r._1 + ":1").mkString(","))
+      (r._1, r._2, r._3, r._4.map(r => r._1 + ":" + r._2.toString).mkString(","))
     })
     id_title_content_kw.cache()
     println(sdf_time.format(new Date((System.currentTimeMillis()))) + "***********************id_title_content_kw= " + id_title_content_kw.count() + "*****************************")
@@ -67,7 +67,7 @@ object kw_online {
       StructField("title", StringType),
       StructField("content", StringType),
       StructField("kw", StringType)))
-    SparkApp.saveToHive(result, "algo.xueyuan_article_key_online", schema, "20170710")
+    SparkApp.saveToHive(result, "algo.xueyuan_article_key_test", schema, "20170704")
     //    srcData.unpersist()
 
     Log.info("finish ******")
@@ -83,6 +83,9 @@ object kw_online {
     Log.info("word vec cnt=" + wordVecg.size)
     val trainWordBroad = sc.broadcast(wordVecg.map(_._1).toSet)
     val se = segmentArticle(data.map(r => (r._1, (r._2._1.toLowerCase(), r._2._2.toLowerCase()))))
+
+    //    println(se.count())
+    //    se
     val id_title_content2_content = se.map(r => {
       val trainWords = trainWordBroad.value
       val id = r._1
@@ -99,18 +102,16 @@ object kw_online {
       (id, title, content2, content)
     }).filter(r => !(r._2.isEmpty && (r._3).isEmpty))
 
+    //    val srcData = queryArticleData(wordVecg.map(_._1).toSet, false).repartition(400).cache()
+    val expTableBroad = sc.broadcast(new ExpTable)
+
+
     val id_title_content_wordsim = id_title_content2_content.mapPartitions { iter =>
       for (r <- iter) yield {
         val title = r._2
         val content2 = r._3
         val allWords_dup = title ++ content2
         val allWords = allWords_dup.distinct
-        var w_tf = allWords.map(r => (r, 0)).toMap
-        for (w <- allWords_dup) {
-          val tf = w_tf(w)
-          val c = tf + 1
-          w_tf += ((w, c))
-        }
         val wordVec = wordVecBroad.value
         val vec = allWords.map { r =>
           val vecOption = wordVec.get(r)
@@ -124,7 +125,7 @@ object kw_online {
           val sim = vec.filter(_._1 != v._1).map(r => Blas.cos(r._2, v._2)).sum
           (v._1, sim)
         }
-        (r._1, title, r._4, wordsim,w_tf)
+        (r._1, title, r._4, wordsim)
       }
     }
     val id_title_content_kw = id_title_content_wordsim.mapPartitions(f = iter => for (r <- iter) yield {
@@ -132,7 +133,6 @@ object kw_online {
       val title = r._2
       val content = r._3
       val wordsim = r._4
-      val w_tf = r._5
       val word_sim_tfidf_tit = wordsim.map(r => {
         val w_tfidf = wordIdfBroad.value
         val w_set = w_tfidf.keySet
@@ -146,7 +146,7 @@ object kw_online {
         if (title.contains(w)) {
           tit = 1
         }
-        (w, sim, tfidf*w_tf(w) , tit)
+        (w, sim, tfidf, tit)
       })
       //归一化
       var sim_max = 0.0
@@ -196,7 +196,7 @@ object kw_online {
           (word, nature)
         } else ("", "")
       })
-      word.filter(t => t._2.startsWith("n") /*|| t._2.startsWith("v")*/).map(_._1)
+      word.filter(t => t._2.startsWith("n") && t._1.length > 1).map(_._1)//xueyuan length>1
     }
 
   }
@@ -207,7 +207,7 @@ object kw_online {
     Log.info("load word vec start")
 
     def queryStopWord = {
-      val srcSql = "select word from algo.lj_article_word_tfidf where idf <=3 or tf > 165943 and  stat_date='uc170626'"
+      val srcSql = "select word from algo.lj_article_word_tfidf where idf <=3 or tf > 165943"
       val srcData = sqlContext.sql(srcSql).map(r => r.getString(0))
       srcData.collect().toSet
     }
@@ -225,12 +225,12 @@ object kw_online {
     srcData.collect().toMap
   }
 
-  private def queryIdf(): Map[String, Double] = {
+  private def queryIdf(): Map[String, Float] = {
     val srcSql =
-      "select word,idf from algo.lj_article_word_tfidf where  stat_date='uc170626'"
+      "select word,tf,idf from algo.lj_article_word_tfidf"
     val ret = SparkApp.hiveContext.sql(srcSql).map(r => {
-      (r.getString(0), r.getDouble(1))
-    }).map(r => (r._1, r._2)).collectAsMap()
+      (r.getString(0), r.getLong(1), r.getDouble(2).toFloat)
+    }).map(r => (r._1, r._2 * r._3)).collectAsMap()
     ret.toMap
   }
 
@@ -238,9 +238,11 @@ object kw_online {
     val srcTable = "mzreader.ods_t_article_c"
     val test = false
     val sqlContext = SparkApp.hiveContext
-    val selectSrc = //s"select a.fid,a.ftitle,cast(unbase64(a.fcontent) as string) from $srcTable a, algo.xueyuan_article_key b where b.stat_date='20170703' and a.fid=b.id and a.fresource_type=2  and a.fid is not null and a.fkeywords is not null and a.fkeywords != ''  limit 1000 "
-          if (test) s"select fid,ftitle,cast(unbase64(fcontent) as string) from $srcTable where (1494022103132001 < fid and fid < 1494037605132008) or fid=1496204576132002" //1496204576132002
-          else s"select a.fid,a.ftitle,cast(unbase64(a.fcontent) as string) from $srcTable a where a.fresource_type=2  and a.fid is not null and a.fkeywords is not null and a.fkeywords != '' and a.fid=1495199942121001 limit " + count
+    val sql1 = "select a.fid,a.ftitle,cast(unbase64(a.fcontent) as string) from mzreader.ods_t_article_c a, algo.xueyuan_article_key b where b.stat_date='20170703' and a.fid=b.id and a.fresource_type=2  and a.fid is not null and a.fkeywords is not null and a.fkeywords != '' and a.fid in (1495116765132004,1495117941121005,1495119425121005,1495124338121006,1495135265121001) limit  10"
+    val selectSrc =
+      if (test) s"select fid,ftitle,cast(unbase64(fcontent) as string) from $srcTable where (1494022103132001 < fid and fid < 1494037605132008) or fid=1496204576132002" //1496204576132002
+      else sql1
+    val sql2 = s"select a.fid,a.ftitle,cast(unbase64(a.fcontent) as string) from $srcTable a, algo.xueyuan_article_key b where b.stat_date='20170703' and a.fid=b.id and a.fresource_type=2  and a.fid is not null and a.fkeywords is not null and a.fkeywords != '' limit " + count
     val srcData = sqlContext.sql(selectSrc)
     println(sdf_time.format(new Date((System.currentTimeMillis()))) + "***********************srcData= " + srcData.count() + "*****************************")
     val id_title_content = srcData.map(r => {
@@ -338,7 +340,6 @@ object kw_online {
     //    SEG.enableAllNamedEntityRecognize(true)
     SEG.enableNumberQuantifierRecognize(true)
     SEG.enableCustomDictionary(true)
-    SEG.enableNameRecognize(false)
 
     def segment(text: String): util.List[Term] = {
       try {

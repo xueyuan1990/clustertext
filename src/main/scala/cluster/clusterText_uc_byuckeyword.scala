@@ -41,7 +41,6 @@ object clusterText_uc_byuckeyword {
     println("***********************start*****************************")
     val sparkConf: SparkConf = new SparkConf().setAppName("xueyuan_clustertext")
     sc = new SparkContext(sparkConf)
-    val sqlContext = new SQLContext(sc)
     println("***********************sc*****************************")
     sc.hadoopConfiguration.set("mapred.output.compress", "false")
     hiveContext = new HiveContext(sc)

@@ -24,6 +24,13 @@ object Blas {
     }
     x
   }
+  def norm3(x: Array[Double]) = {
+    var arraybuffer = new Array[Float](x.length)
+    for (i <- 0 until (x.length)) {
+      arraybuffer(i) = x(i).toFloat
+    }
+    norm2(arraybuffer)
+  }
   def cos(x:Array[Float],y:Array[Float]):Double = {
     dot(x,y)/(math.sqrt(dot(x,x)) * math.sqrt(dot(y,y)))
   }
